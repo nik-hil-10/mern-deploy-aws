@@ -1,0 +1,19 @@
+Graded Assignment: Deploying a MERN Application on AWS
+=======================================================
+
+Student Name: [Your Name]
+Date: June 2026
+
+GitHub Repository Link:
+https://github.com/nik-hil-10/mern-deploy-aws
+
+Description:
+This repository contains Terraform scripts for AWS infrastructure setup 
+and Ansible playbooks for configuration and deployment of the TravelMemory 
+MERN (MongoDB, Express.js, React, Node.js) application.
+
+Contents:
+- terraform/    : Infrastructure as Code (VPC, EC2, Security Groups, IAM)
+- ansible/      : Configuration management (MongoDB, Node.js, Nginx, PM2)
+- report.md     : Detailed implementation report with screenshots
+- screenshots/  : Verification screenshots
