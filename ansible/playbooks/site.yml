@@ -1,0 +1,12 @@
+# =============================================================================
+# Master Playbook — Orchestrates all roles in the correct order
+# =============================================================================
+---
+- name: Setup MongoDB on Database Server
+  import_playbook: dbserver.yml
+
+- name: Setup Web Server with Node.js and Application
+  import_playbook: webserver.yml
+
+- name: Deploy and Verify the Application
+  import_playbook: deploy-app.yml

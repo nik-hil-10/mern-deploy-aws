@@ -1,0 +1,263 @@
+# =============================================================================
+# Web Server Playbook — Install Node.js, Nginx, Clone & Build App
+# =============================================================================
+---
+- name: Configure Web Server (Node.js + MERN App)
+  hosts: webserver
+  become: yes
+  vars:
+    nodejs_version: "18"
+    app_repo: "https://github.com/UnpredictablePrashant/TravelMemory.git"
+    app_dir: "/home/ubuntu/TravelMemory"
+    mongo_db_name: "travelmemory"
+    mongo_app_user: "appuser"
+    mongo_app_password: "TravelMemApp2024Secure!"
+    db_server_private_ip: "{{ hostvars['db']['ansible_host'] }}"
+    backend_port: 3001
+    frontend_port: 3000
+
+  tasks:
+    # ------ System Updates ------
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+
+    - name: Install prerequisite packages
+      apt:
+        name:
+          - curl
+          - git
+          - nginx
+          - ufw
+          - build-essential
+        state: present
+
+    # ------ Install Node.js 18.x ------
+    - name: Add NodeSource GPG key
+      ansible.builtin.shell: |
+        curl -fsSL https://deb.nodesource.com/setup_{{ nodejs_version }}.x | bash -
+      args:
+        creates: /etc/apt/sources.list.d/nodesource.list
+
+    - name: Install Node.js
+      apt:
+        name: nodejs
+        state: present
+        update_cache: yes
+
+    - name: Verify Node.js installation
+      command: node --version
+      register: node_version
+      changed_when: false
+
+    - name: Print Node.js version
+      debug:
+        msg: "Node.js version: {{ node_version.stdout }}"
+
+    - name: Verify NPM installation
+      command: npm --version
+      register: npm_version
+      changed_when: false
+
+    - name: Print NPM version
+      debug:
+        msg: "NPM version: {{ npm_version.stdout }}"
+
+    # ------ Install PM2 Process Manager ------
+    - name: Install PM2 globally
+      npm:
+        name: pm2
+        global: yes
+        state: present
+
+    # ------ Clone Application ------
+    - name: Clone TravelMemory repository
+      git:
+        repo: "{{ app_repo }}"
+        dest: "{{ app_dir }}"
+        version: main
+        force: yes
+      become_user: ubuntu
+
+    # ------ Backend Setup ------
+    - name: Install backend dependencies
+      npm:
+        path: "{{ app_dir }}/backend"
+        state: present
+      become_user: ubuntu
+
+    - name: Create backend .env file
+      template:
+        src: ../templates/backend.env.j2
+        dest: "{{ app_dir }}/backend/.env"
+        owner: ubuntu
+        group: ubuntu
+        mode: "0600"
+
+    # ------ Frontend Setup ------
+    - name: Install frontend dependencies
+      npm:
+        path: "{{ app_dir }}/frontend"
+        state: present
+      become_user: ubuntu
+
+    - name: Update frontend API URL to point to backend
+      lineinfile:
+        path: "{{ app_dir }}/frontend/src/url.js"
+        regexp: ".*export.*"
+        line: "export const baseUrl = 'http://{{ ansible_host }}:{{ backend_port }}';"
+        create: yes
+      become_user: ubuntu
+      ignore_errors: yes
+
+    - name: Build React frontend for production
+      shell: cd {{ app_dir }}/frontend && npm run build
+      become_user: ubuntu
+      environment:
+        CI: "false"
+
+    # ------ Configure Nginx Reverse Proxy ------
+    - name: Configure Nginx as reverse proxy
+      copy:
+        content: |
+          server {
+              listen 80;
+              server_name _;
+
+              # Serve React frontend (production build)
+              location / {
+                  root {{ app_dir }}/frontend/build;
+                  index index.html;
+                  try_files $uri $uri/ /index.html;
+              }
+
+              # Proxy API requests to Express backend
+              location /trip {
+                  proxy_pass http://localhost:{{ backend_port }};
+                  proxy_http_version 1.1;
+                  proxy_set_header Upgrade $http_upgrade;
+                  proxy_set_header Connection 'upgrade';
+                  proxy_set_header Host $host;
+                  proxy_set_header X-Real-IP $remote_addr;
+                  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                  proxy_cache_bypass $http_upgrade;
+              }
+          }
+        dest: /etc/nginx/sites-available/travelmemory
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Restart Nginx
+
+    - name: Enable Nginx site
+      file:
+        src: /etc/nginx/sites-available/travelmemory
+        dest: /etc/nginx/sites-enabled/travelmemory
+        state: link
+      notify: Restart Nginx
+
+    - name: Remove default Nginx site
+      file:
+        path: /etc/nginx/sites-enabled/default
+        state: absent
+      notify: Restart Nginx
+
+    - name: Test Nginx configuration
+      command: nginx -t
+      register: nginx_test
+      changed_when: false
+
+    # ------ Start Backend with PM2 ------
+    - name: Create PM2 ecosystem file
+      template:
+        src: ../templates/travelmemory.service.j2
+        dest: "{{ app_dir }}/ecosystem.config.js"
+        owner: ubuntu
+        group: ubuntu
+        mode: "0644"
+
+    - name: Stop any existing PM2 processes
+      shell: pm2 delete all || true
+      become_user: ubuntu
+      ignore_errors: yes
+
+    - name: Start backend with PM2
+      shell: cd {{ app_dir }} && pm2 start ecosystem.config.js
+      become_user: ubuntu
+
+    - name: Save PM2 process list
+      shell: pm2 save
+      become_user: ubuntu
+
+    - name: Setup PM2 startup script
+      shell: pm2 startup systemd -u ubuntu --hp /home/ubuntu | tail -1 | bash
+      ignore_errors: yes
+
+    # ------ Firewall Configuration ------
+    - name: Configure UFW - allow SSH
+      ufw:
+        rule: allow
+        port: "22"
+        proto: tcp
+
+    - name: Configure UFW - allow HTTP
+      ufw:
+        rule: allow
+        port: "80"
+        proto: tcp
+
+    - name: Configure UFW - allow React dev
+      ufw:
+        rule: allow
+        port: "3000"
+        proto: tcp
+
+    - name: Configure UFW - allow Express API
+      ufw:
+        rule: allow
+        port: "3001"
+        proto: tcp
+
+    - name: Enable UFW
+      ufw:
+        state: enabled
+        policy: deny
+
+    # ------ Security Hardening ------
+    - name: Disable root SSH login
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: "^#?PermitRootLogin"
+        line: "PermitRootLogin no"
+        state: present
+      notify: Restart SSH
+
+    - name: Disable password authentication
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: "^#?PasswordAuthentication"
+        line: "PasswordAuthentication no"
+        state: present
+      notify: Restart SSH
+
+    - name: Install unattended-upgrades
+      apt:
+        name: unattended-upgrades
+        state: present
+
+    - name: Enable automatic security updates
+      shell: echo 'APT::Periodic::Unattended-Upgrade "1";' > /etc/apt/apt.conf.d/20auto-upgrades
+      args:
+        creates: /etc/apt/apt.conf.d/20auto-upgrades
+
+  handlers:
+    - name: Restart Nginx
+      systemd:
+        name: nginx
+        state: restarted
+
+    - name: Restart SSH
+      systemd:
+        name: sshd
+        state: restarted

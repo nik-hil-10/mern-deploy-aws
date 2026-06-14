@@ -1,0 +1,175 @@
+# =============================================================================
+# Database Server Playbook — Install & Configure MongoDB 7.0
+# =============================================================================
+---
+- name: Configure Database Server (MongoDB)
+  hosts: dbserver
+  become: yes
+  vars:
+    mongo_version: "7.0"
+    mongo_db_name: "travelmemory"
+    mongo_app_user: "appuser"
+    mongo_app_password: "TravelMemApp2024Secure!"
+    mongo_admin_user: "admin"
+    mongo_admin_password: "AdminPass2024Secure!"
+    web_server_private_ip: "{{ hostvars['web']['ansible_host'] | default('10.0.1.0/24') }}"
+
+  tasks:
+    # ------ System Updates ------
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+
+    - name: Install prerequisite packages
+      apt:
+        name:
+          - gnupg
+          - curl
+          - apt-transport-https
+          - ca-certificates
+          - software-properties-common
+          - python3-pip
+          - ufw
+        state: present
+
+    # ------ Install MongoDB 7.0 ------
+    - name: Import MongoDB GPG key
+      ansible.builtin.shell: |
+        curl -fsSL https://www.mongodb.org/static/pgp/server-{{ mongo_version }}.asc | \
+        gpg --dearmor -o /usr/share/keyrings/mongodb-server-{{ mongo_version }}.gpg
+      args:
+        creates: /usr/share/keyrings/mongodb-server-{{ mongo_version }}.gpg
+
+    - name: Add MongoDB repository
+      ansible.builtin.apt_repository:
+        repo: "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-{{ mongo_version }}.gpg ] https://repo.mongodb.org/apt/ubuntu jammy/mongodb-org/{{ mongo_version }} multiverse"
+        filename: "mongodb-org-{{ mongo_version }}"
+        state: present
+
+    - name: Install MongoDB packages
+      apt:
+        name: mongodb-org
+        state: present
+        update_cache: yes
+
+    # ------ Configure MongoDB ------
+    - name: Configure MongoDB (bind to all interfaces, enable auth)
+      template:
+        src: ../templates/mongod.conf.j2
+        dest: /etc/mongod.conf
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Restart MongoDB
+
+    - name: Ensure MongoDB data directory exists
+      file:
+        path: /var/lib/mongodb
+        state: directory
+        owner: mongodb
+        group: mongodb
+        mode: "0755"
+
+    - name: Enable and start MongoDB service
+      systemd:
+        name: mongod
+        enabled: yes
+        state: started
+
+    - name: Wait for MongoDB to be ready
+      wait_for:
+        port: 27017
+        delay: 5
+        timeout: 60
+
+    # ------ Create MongoDB Users ------
+    - name: Install pymongo for Ansible MongoDB modules
+      pip:
+        name: pymongo
+        state: present
+
+    - name: Create MongoDB admin user
+      community.mongodb.mongodb_user:
+        database: admin
+        name: "{{ mongo_admin_user }}"
+        password: "{{ mongo_admin_password }}"
+        roles:
+          - { db: admin, role: userAdminAnyDatabase }
+          - { db: admin, role: readWriteAnyDatabase }
+          - { db: admin, role: dbAdminAnyDatabase }
+          - { db: admin, role: clusterAdmin }
+        state: present
+        login_port: 27017
+      ignore_errors: yes
+
+    - name: Create application database user
+      community.mongodb.mongodb_user:
+        database: "{{ mongo_db_name }}"
+        name: "{{ mongo_app_user }}"
+        password: "{{ mongo_app_password }}"
+        roles:
+          - { db: "{{ mongo_db_name }}", role: readWrite }
+        state: present
+        login_user: "{{ mongo_admin_user }}"
+        login_password: "{{ mongo_admin_password }}"
+        login_database: admin
+        login_port: 27017
+      ignore_errors: yes
+
+    # ------ Firewall Configuration ------
+    - name: Configure UFW - allow SSH
+      ufw:
+        rule: allow
+        port: "22"
+        proto: tcp
+
+    - name: Configure UFW - allow MongoDB from VPC
+      ufw:
+        rule: allow
+        port: "27017"
+        proto: tcp
+        src: "10.0.0.0/16"
+
+    - name: Enable UFW
+      ufw:
+        state: enabled
+        policy: deny
+
+    # ------ Security Hardening ------
+    - name: Disable root SSH login
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: "^#?PermitRootLogin"
+        line: "PermitRootLogin no"
+        state: present
+      notify: Restart SSH
+
+    - name: Disable password authentication
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: "^#?PasswordAuthentication"
+        line: "PasswordAuthentication no"
+        state: present
+      notify: Restart SSH
+
+    - name: Install unattended-upgrades
+      apt:
+        name: unattended-upgrades
+        state: present
+
+    - name: Enable automatic security updates
+      shell: echo 'APT::Periodic::Unattended-Upgrade "1";' > /etc/apt/apt.conf.d/20auto-upgrades
+      args:
+        creates: /etc/apt/apt.conf.d/20auto-upgrades
+
+  handlers:
+    - name: Restart MongoDB
+      systemd:
+        name: mongod
+        state: restarted
+
+    - name: Restart SSH
+      systemd:
+        name: sshd
+        state: restarted

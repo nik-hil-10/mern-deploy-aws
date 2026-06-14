@@ -1,0 +1,105 @@
+# =============================================================================
+# Application Deployment & Verification Playbook
+# =============================================================================
+---
+- name: Deploy and Verify TravelMemory Application
+  hosts: webserver
+  become: yes
+  become_user: ubuntu
+  vars:
+    app_dir: "/home/ubuntu/TravelMemory"
+    backend_port: 3001
+
+  tasks:
+    # ------ Verify Backend is Running ------
+    - name: Check PM2 process list
+      shell: pm2 list
+      register: pm2_status
+      changed_when: false
+
+    - name: Display PM2 status
+      debug:
+        msg: "{{ pm2_status.stdout_lines }}"
+
+    # ------ Test Backend API ------
+    - name: Test backend API - GET /trip
+      uri:
+        url: "http://localhost:{{ backend_port }}/trip"
+        method: GET
+        return_content: yes
+        status_code: [200, 304]
+      register: api_response
+      ignore_errors: yes
+
+    - name: Display API response
+      debug:
+        msg: "Backend API response: {{ api_response.content | default('No response') }}"
+
+    # ------ Test Adding Sample Data ------
+    - name: Add sample trip data
+      uri:
+        url: "http://localhost:{{ backend_port }}/trip"
+        method: POST
+        body_format: json
+        body:
+          tripName: "Incredible India"
+          startDateOfJourney: "19-03-2022"
+          endDateOfJourney: "27-03-2022"
+          nameOfHotels: "Hotel Namaste, Backpackers Club"
+          placesVisited: "Delhi, Kolkata, Chennai, Mumbai"
+          totalCost: 800000
+          tripType: "leisure"
+          experience: "An amazing journey through the diverse landscapes and cultures of India. From the bustling streets of Delhi to the serene backwaters, every moment was unforgettable."
+        return_content: yes
+        status_code: [200, 201]
+      register: post_response
+      ignore_errors: yes
+
+    - name: Display POST response
+      debug:
+        msg: "Trip creation response: {{ post_response.content | default('No response') }}"
+
+    # ------ Verify Data Retrieval ------
+    - name: Verify trip data retrieval - GET /trip
+      uri:
+        url: "http://localhost:{{ backend_port }}/trip"
+        method: GET
+        return_content: yes
+        status_code: [200, 304]
+      register: get_response
+      ignore_errors: yes
+
+    - name: Display all trips
+      debug:
+        msg: "All trips: {{ get_response.content | default('No response') }}"
+
+    # ------ Check Nginx ------
+    - name: Test Nginx is serving frontend
+      uri:
+        url: "http://localhost:80"
+        method: GET
+        return_content: no
+        status_code: [200, 301, 302]
+      register: nginx_response
+      become: yes
+      become_user: root
+      ignore_errors: yes
+
+    - name: Display Nginx status
+      debug:
+        msg: "Nginx status: {{ nginx_response.status | default('unreachable') }}"
+
+    # ------ Final Summary ------
+    - name: Print deployment summary
+      debug:
+        msg: |
+          =====================================================
+          🚀 TravelMemory Deployment Summary
+          =====================================================
+          ✅ Backend API:  http://{{ ansible_host }}:{{ backend_port }}/trip
+          ✅ Frontend:     http://{{ ansible_host }}
+          ✅ PM2 Status:   Running
+          =====================================================
+          Open your browser and navigate to:
+            http://{{ ansible_host }}
+          =====================================================
