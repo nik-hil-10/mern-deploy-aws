@@ -1,7 +1,7 @@
 # Graded Assignment: Deploying a MERN Application on AWS
 
 ## Student Information
-- **Name:** [Your Name]
+- **Name:** Nikhil
 - **Date:** June 2026
 
 ## Table of Contents
@@ -28,41 +28,31 @@ Deploy the TravelMemory MERN (MongoDB, Express.js, React, Node.js) stack applica
 
 The deployment follows a two-tier architecture within an AWS VPC:
 
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                        AWS VPC (10.0.0.0/16)                        │
-│                                                                     │
-│  ┌──────────────────────────┐    ┌──────────────────────────┐       │
-│  │   Public Subnet          │    │   Private Subnet          │      │
-│  │   (10.0.1.0/24)          │    │   (10.0.2.0/24)           │      │
-│  │                          │    │                           │      │
-│  │  ┌──────────────────┐    │    │  ┌──────────────────┐     │      │
-│  │  │  EC2 Web Server  │────│────│──│  EC2 DB Server   │     │      │
-│  │  │  - Node.js       │    │    │  │  - MongoDB 7.0   │     │      │
-│  │  │  - React (build) │    │    │  │  - Port 27017    │     │      │
-│  │  │  - Express :3001 │    │    │  └──────────────────┘     │      │
-│  │  │  - Nginx :80     │    │    │           │               │      │
-│  │  │  - PM2           │    │    │           │ (via NAT GW)  │      │
-│  │  └──────────────────┘    │    │           ▼               │      │
-│  │         │                │    └──────────────────────────┘       │
-│  │         │                │                                       │
-│  │  ┌──────┴─────┐         │                                       │
-│  │  │ NAT Gateway │         │                                       │
-│  │  └──────┬─────┘         │                                       │
-│  └─────────│────────────────┘                                       │
-│            │                                                         │
-│  ┌─────────┴─────────┐                                              │
-│  │ Internet Gateway   │                                              │
-│  └─────────┬─────────┘                                              │
-└────────────│────────────────────────────────────────────────────────┘
-             │
-        ┌────┴────┐
-        │ Internet │
-        └────┬────┘
-             │
-        ┌────┴────┐
-        │  User   │
-        └─────────┘
+```mermaid
+graph TD
+    User((User)) --> |HTTP/80| IGW[Internet Gateway]
+    
+    subgraph VPC [AWS VPC 10.0.0.0/16]
+        IGW --> WebEC2
+        
+        subgraph Public [Public Subnet 10.0.1.0/24]
+            WebEC2[EC2 Web Server<br/>- React Frontend<br/>- Express Backend<br/>- Nginx / PM2]
+            NAT[NAT Gateway]
+        end
+        
+        subgraph Private [Private Subnet 10.0.2.0/24]
+            DBEC2[(EC2 DB Server<br/>- MongoDB 7.0<br/>- Port 27017)]
+        end
+        
+        WebEC2 --> |API Calls| DBEC2
+        DBEC2 -.-> |Outbound Internet| NAT
+        NAT -.-> IGW
+    end
+    
+    classDef subnet fill:#f9f9f9,stroke:#333,stroke-width:2px;
+    classDef vpc fill:#f0f8ff,stroke:#0055a4,stroke-width:2px,stroke-dasharray: 5 5;
+    class Public,Private subnet;
+    class VPC vpc;
 ```
 
 ### Component Interaction
@@ -87,8 +77,8 @@ The deployment follows a two-tier architecture within an AWS VPC:
 
 **📸 Screenshots:**
 
-<!-- INSERT SCREENSHOT: aws sts get-caller-identity output -->
-<!-- INSERT SCREENSHOT: terraform init output -->
+![AWS Identity](screenshots/step1.1-aws-identity.png)
+![Terraform Init](screenshots/step1.1-terraform-init.png)
 
 ---
 
@@ -106,9 +96,9 @@ The deployment follows a two-tier architecture within an AWS VPC:
 
 **📸 Screenshots:**
 
-<!-- INSERT SCREENSHOT: AWS Console - VPC Dashboard -->
-<!-- INSERT SCREENSHOT: AWS Console - Subnets -->
-<!-- INSERT SCREENSHOT: AWS Console - Route Tables -->
+![VPC Dashboard](screenshots/step1.2-vpc-dashboard.png)
+![Subnets Dashboard](screenshots/step1.2-subnets.png)
+![Route Tables Dashboard](screenshots/step1.2-route-tables.png)
 
 ---
 
@@ -134,8 +124,8 @@ The deployment follows a two-tier architecture within an AWS VPC:
 
 **📸 Screenshots:**
 
-<!-- INSERT SCREENSHOT: AWS Console - Web Server Security Group -->
-<!-- INSERT SCREENSHOT: AWS Console - DB Server Security Group -->
+![Web Server Security Group](screenshots/step1.3-web-sg.png)
+![DB Server Security Group](screenshots/step1.3-db-sg.png)
 
 ---
 
@@ -150,7 +140,7 @@ The deployment follows a two-tier architecture within an AWS VPC:
 
 **📸 Screenshots:**
 
-<!-- INSERT SCREENSHOT: AWS Console - IAM Role -->
+![IAM Role Dashboard](screenshots/step1.4-iam-role.png)
 
 ---
 
@@ -165,8 +155,7 @@ The deployment follows a two-tier architecture within an AWS VPC:
 
 **📸 Screenshots:**
 
-<!-- INSERT SCREENSHOT: AWS Console - EC2 Instances Running -->
-<!-- INSERT SCREENSHOT: terraform output command -->
+![EC2 Instances Running](screenshots/step1.5-ec2-instances.png)
 
 ---
 
@@ -174,15 +163,15 @@ The deployment follows a two-tier architecture within an AWS VPC:
 
 **Terraform outputs:**
 ```
-web_server_public_ip  = "x.x.x.x"
+web_server_public_ip  = "3.110.87.209"
 web_server_private_ip = "10.0.1.x"
-db_server_private_ip  = "10.0.2.x"
+db_server_private_ip  = "10.0.2.76"
 vpc_id                = "vpc-xxxxxxx"
 ```
 
 **📸 Screenshots:**
 
-<!-- INSERT SCREENSHOT: terraform output -->
+![Terraform Output](screenshots/step1.6-terraform-output.png)
 
 ---
 
@@ -198,7 +187,7 @@ vpc_id                = "vpc-xxxxxxx"
 
 **📸 Screenshots:**
 
-<!-- INSERT SCREENSHOT: ansible all -m ping output -->
+![Ansible Ping Test](screenshots/step2.1-ansible-ping.png)
 
 ---
 
@@ -216,8 +205,7 @@ vpc_id                = "vpc-xxxxxxx"
 
 **📸 Screenshots:**
 
-<!-- INSERT SCREENSHOT: Ansible playbook output for dbserver.yml -->
-<!-- INSERT SCREENSHOT: MongoDB service status -->
+![MongoDB Setup Status](screenshots/step2.2-mongodb-setup.png)
 
 ---
 
@@ -236,9 +224,7 @@ vpc_id                = "vpc-xxxxxxx"
 
 **📸 Screenshots:**
 
-<!-- INSERT SCREENSHOT: Ansible playbook output for webserver.yml -->
-<!-- INSERT SCREENSHOT: PM2 process list -->
-<!-- INSERT SCREENSHOT: Nginx status -->
+![Webserver PM2 Setup Status](screenshots/step2.3-webserver-setup.png)
 
 ---
 
@@ -252,10 +238,8 @@ vpc_id                = "vpc-xxxxxxx"
 
 **📸 Screenshots:**
 
-<!-- INSERT SCREENSHOT: Browser showing TravelMemory frontend -->
-<!-- INSERT SCREENSHOT: API response from /trip endpoint -->
-<!-- INSERT SCREENSHOT: curl POST creating a trip -->
-<!-- INSERT SCREENSHOT: curl GET showing trip data -->
+![TravelMemory Frontend Browser](screenshots/step2.4-frontend-browser.png)
+![API Response Browser](screenshots/step2.4-api-response.png)
 
 ---
 
@@ -277,9 +261,9 @@ vpc_id                = "vpc-xxxxxxx"
 
 **📸 Screenshots:**
 
-<!-- INSERT SCREENSHOT: UFW status on web server -->
-<!-- INSERT SCREENSHOT: UFW status on db server -->
-<!-- INSERT SCREENSHOT: sshd_config hardening -->
+![UFW Status Webserver](screenshots/step2.5-ufw-status.png)
+
+![SSH Hardening Configuration](screenshots/step2.5-ssh-hardening.png)
 
 ---
 
@@ -306,7 +290,7 @@ The application is accessible at `http://<web_server_public_ip>` with the React 
 
 ## Repository
 
-**GitHub Repository:** [Link to your repository]
+**GitHub Repository:** [https://github.com/nik-hil-10/mern-deploy-aws](https://github.com/nik-hil-10/mern-deploy-aws)
 
 **Files included:**
 - `terraform/` — All Terraform infrastructure scripts
