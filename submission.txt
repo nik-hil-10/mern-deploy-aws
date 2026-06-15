@@ -1,7 +1,7 @@
 Graded Assignment: Deploying a MERN Application on AWS
 =======================================================
 
-Student Name: [Your Name]
+Student Name: Nikhil Mishra
 Date: June 2026
 
 GitHub Repository Link:

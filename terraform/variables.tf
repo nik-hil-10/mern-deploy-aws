@@ -8,6 +8,12 @@ variable "aws_region" {
   default     = "ap-south-1"
 }
 
+variable "aws_profile" {
+  description = "AWS CLI profile to use (SSO profile name)"
+  type        = string
+  default     = "nikhil"
+}
+
 variable "project_name" {
   description = "Project name used for resource naming"
   type        = string
