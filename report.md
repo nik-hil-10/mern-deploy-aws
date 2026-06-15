@@ -48,11 +48,6 @@ graph TD
         DBEC2 -.-> |Outbound Internet| NAT
         NAT -.-> IGW
     end
-    
-    classDef subnet fill:#f9f9f9,stroke:#333,stroke-width:2px;
-    classDef vpc fill:#f0f8ff,stroke:#0055a4,stroke-width:2px,stroke-dasharray: 5 5;
-    class Public,Private subnet;
-    class VPC vpc;
 ```
 
 ### Component Interaction
